@@ -16,7 +16,7 @@ To run the Neural Photo Editor, you will need:
 ## Running the NPE
 First, download the pre-trained IAN_simple model [here](https://drive.google.com/file/d/0B3_iVBZsC4GGck5WWWc0R0dvT1U/view?usp=sharing).
 
-This is a slimmed-down version of the IAN without MDC or RGB-Beta blocks, which runs without lag on a laptop GPU with <1GB (GT730M).
+This is a slimmed-down version of the IAN without MDC or RGB-Beta blocks, which runs without lag on a laptop GPU with ~1GB of memory (GT730M).
 
 Then, run the command:
 
@@ -25,7 +25,7 @@ python NPE.py
 ```
 If you wish to use a different model, simply edit the line with "config path" in the NPE.py file. You can make use of any model with an inference mechanism (VAE or ALI-based GAN).
 
-## Commands:
+## Commands
 - You can paint the image by picking a color and painting on the image, or paint in the latent space canvas (the red and blue tiles below the image). 
 - The long horizontal slider controls the magnitude of the latent brush, and the smaller horizontal slider controls the size of both the latent and the main image brush.
 - You can select different entries from the subset of the celebA validation set (included in this repository as an .npz) by typing in a number from 0-999 in the bottom left box and hitting "infer."
