@@ -3,7 +3,7 @@ A simple interface for editing natural photos with generative neural networks.
 
 ![GUI](http://i.imgur.com/w1U20EI.png)
 
-This repository contains code for the paper ["Neural Photo Editing with Introspective Adversarial Networks,"] (arXiv link coming tonight) and the [Associated Video](https://www.youtube.com/watch?v=FDELBFSeqQs).
+This repository contains code for the paper "[Neural Photo Editing with Introspective Adversarial Networks](http://arxiv.org/abs/1609.07093)," and the [Associated Video](https://www.youtube.com/watch?v=FDELBFSeqQs).
 
 ## Installation
 To run the Neural Photo Editor, you will need:
