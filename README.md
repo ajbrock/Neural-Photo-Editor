@@ -8,15 +8,18 @@ This repository contains code for the paper "[Neural Photo Editing with Introspe
 ## Installation
 To run the Neural Photo Editor, you will need:
 
-- [Theano](http://deeplearning.net/software/theano/) 
-- [lasagne](http://lasagne.readthedocs.io/en/latest/user/installation.html)
+- [Theano](http://deeplearning.net/software/theano/), development version.  
+- [lasagne](http://lasagne.readthedocs.io/en/latest/user/installation.html), development version.
 - I highly recommend [cuDNN](https://developer.nvidia.com/cudnn) as speed is key. You'll need to uncomment my explicit DNN calls if you wish to not use it.
+NOTE: I am currently working on a non-cuDNN implementation that should allow for non-NVIDIA GPUs (and maybe CPUs too)--stay tuned!
 - numpy, scipy, PIL, Tkinter and tkColorChooser, but it is likely that your python distribution already has those.
 
 ## Running the NPE
-First, download the pre-trained IAN_simple model [here](https://drive.google.com/file/d/0B3_iVBZsC4GGck5WWWc0R0dvT1U/view?usp=sharing).
+By default, the NPE runs on IAN_simple. This is a slimmed-down version of the IAN without MDC or RGB-Beta blocks, which runs without lag on a laptop GPU with ~1GB of memory (GT730M)
 
-This is a slimmed-down version of the IAN without MDC or RGB-Beta blocks, which runs without lag on a laptop GPU with ~1GB of memory (GT730M).
+If you're on a Windows machine, you will want to create a .theanorc file and at least set the flag FLOATX=float32. 
+
+If you're on a linux machine, you can just insert THEANO_FLAGS=floatX=float32 before the command line call.
 
 Then, run the command:
 
@@ -58,10 +61,13 @@ python sample_IAN.py IAN.py
 Note that you will need [matplotlib](http://matplotlib.org/). to do so.
 ## Known Bugs
 Occasionally the color picker freaks out and returns "None"s rather than values. Simply re-choose a color to fix this.
+My MADE layer currently only accepts hidden unit sizes that are equal to the size of the latent vector, which will present itself as a BAD_PARAM error.
+Since the MADE really only acts as an autoregressive randomizer I'm not too worried about this, but it does bare looking into.
 
 
 ## Notes
 More pre-trained models (which will be in the repo rather than a drive folder) and the remainder of the IAN experiments (including SVHN and the full pre-trained IAN used to generate the samples from the paper) coming soon.
+I'm considering putting up a TensorFlow implementation, if people would be interested in that, let me know (maybe with an Issues 
 
 ## Acknowledgments
 This code contains lasagne layers and other goodies adopted from a number of places:

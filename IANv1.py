@@ -1,4 +1,4 @@
-## IAN with randomized IAF
+## IAN with binary adversarial loss and no orthogonal regularization
 
 import lasagne
 import lasagne.layers
@@ -32,7 +32,7 @@ from math import sqrt
 
 
 
-from layers import MDBLOCK, DeconvLayer, MinibatchLayer, beta_layer, MADE,IAFLayer, GaussianSampleLayer, MDCL
+from layers import MDBLOCK, DeconvLayer, MinibatchLayer, beta_layer, MADE, IAFLayer, GaussianSampleLayer, MDCL
 
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 lr_schedule = { 0: 0.0002,25:0.0001,50:0.00005,75:0.00001}
@@ -48,7 +48,7 @@ cfg = {'batch_size' : 16,
        'dims' : (64,64),
        'n_channels' : 3,
        'batches_per_chunk': 64,
-       'max_epochs' :80,
+       'max_epochs' :150,
        'checkpoint_every_nth' : 1,
        'num_latents': 100,
        'recon_weight': 3.0,
@@ -58,14 +58,10 @@ cfg = {'batch_size' : 16,
        'agr_weight':1.0,
        'ags_weight':1.0, 
        'n_shuffles' : 1,
-       'ortho' : 1e-3,
        }
        
-
-
-    
 def get_model(interp=False):
-    dims, n_channels  = tuple(cfg['dims']), cfg['n_channels']
+    dims, n_channels = tuple(cfg['dims']), cfg['n_channels']
     shape = (None, n_channels)+dims
     l_in = lasagne.layers.InputLayer(shape=shape)
     l_enc_conv1 = C2D(
@@ -128,55 +124,53 @@ def get_model(interp=False):
     l_Z = IAFLayer(l_Z_IAF,l_IAF_mu,l_IAF_logsigma,name='l_Z')
     l_dec_fc2 = DL(
         incoming = l_Z,
-        num_units = 512*16,
-        nonlinearity = lrelu(0.2),
+        num_units = 1024*16,
+        nonlinearity = None,
         W=initmethod(0.02),
         name='l_dec_fc2')
     l_unflatten = lasagne.layers.ReshapeLayer(
         incoming = l_dec_fc2,
-        shape = ([0],512,4,4),
+        shape = ([0],1024,4,4),
         )
-    l_dec_conv1 = DeconvLayer(
+    l_dec_conv1 = BN(DeconvLayer(
         incoming = l_unflatten,
         num_filters = 512,
         filter_size = [5,5],
         stride = [2,2],
         crop = (2,2),
         W = initmethod(0.02),
-        nonlinearity = None,
+        nonlinearity = relu,
         name =  'dec_conv1'
-        )
-    l_dec_conv2a = MDBLOCK(incoming=l_dec_conv1,num_filters=512,scales=[0,2],name='dec_conv2a',nonlinearity=lrelu(0.2))    
-    l_dec_conv2 = DeconvLayer(
-        incoming = l_dec_conv2a,
+        ),name = 'bnorm_dc1')
+    l_dec_conv2 = BN(DeconvLayer(
+        incoming = l_dec_conv1,
         num_filters = 256,
         filter_size = [5,5],
         stride = [2,2],
         crop = (2,2),
         W = initmethod(0.02),
-        nonlinearity = None,
+        nonlinearity = relu,
         name =  'dec_conv2'
-        )
-    l_dec_conv3a = MDBLOCK(incoming=l_dec_conv2,num_filters=256,scales=[0,2,3],name='dec_conv3a',nonlinearity=lrelu(0.2))    
-    l_dec_conv3 = DeconvLayer(
-        incoming = l_dec_conv3a,
+        ),name = 'bnorm_dc2')
+    l_dec_conv3 = BN(DeconvLayer(
+        incoming = l_dec_conv2,
         num_filters = 128,
         filter_size = [5,5],
         stride = [2,2],
         crop = (2,2),
         W = initmethod(0.02),
-        nonlinearity = None,
+        nonlinearity = relu,
         name =  'dec_conv3'
-        )
-    l_dec_conv4a = MDBLOCK(incoming=l_dec_conv3,num_filters=128,scales=[0,2,3],name='dec_conv4a',nonlinearity=lrelu(0.2))    
+        ),name = 'bnorm_dc3')
+        
     l_dec_conv4 = BN(DeconvLayer(
-        incoming = l_dec_conv4a,
-        num_filters = 128,
+        incoming = l_dec_conv3,
+        num_filters = 64,
         filter_size = [5,5],
         stride = [2,2],
         crop = (2,2),
         W = initmethod(0.02),
-        nonlinearity = lrelu(0.2),
+        nonlinearity = relu,
         name =  'dec_conv4'
         ),name = 'bnorm_dc4') 
         
@@ -206,11 +200,10 @@ def get_model(interp=False):
         )]),sigmoid)  
     l_out=CL([beta_layer(SL(R,slice(0,1),1),SL(R,slice(1,2),1)),beta_layer(SL(G,slice(0,1),1),SL(G,slice(1,2),1)),beta_layer(SL(B,slice(0,1),1),SL(B,slice(1,2),1))])   
    
-
     minibatch_discrim =  MinibatchLayer(lasagne.layers.GlobalPoolLayer(l_enc_conv4), num_kernels=500,name='minibatch_discrim')    
     l_discrim = DL(incoming = minibatch_discrim,
-        num_units = 3,
-        nonlinearity = lasagne.nonlinearities.softmax,
+        num_units = 1,
+        nonlinearity = lasagne.nonlinearities.sigmoid,
         b = None,
         W=initmethod(0.02),
         name = 'discrimi')
@@ -225,6 +218,7 @@ def get_model(interp=False):
             'l_IAF_ls': l_IAF_logsigma,
             'l_Z_IAF': l_Z_IAF,
             'l_introspect':[l_enc_conv1, l_enc_conv2,l_enc_conv3,l_enc_conv4],
+
             'l_discrim' : l_discrim}
 
             

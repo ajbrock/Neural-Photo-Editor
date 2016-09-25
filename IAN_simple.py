@@ -180,7 +180,7 @@ def get_model(interp=False):
             'l_out':l_out,
             'l_mu':l_enc_mu,
             'l_ls':l_enc_logsigma,            
-            'l_latents':l_Z,
+            'l_Z':l_Z,
             'l_introspect':[l_enc_conv1, l_enc_conv2,l_enc_conv3,l_enc_conv4],
             'l_discrim' : l_discrim}
 

@@ -6,10 +6,11 @@
 # Gaussian Sample layer from Tencia Lee's Recipe: https://github.com/Lasagne/Recipes/blob/master/examples/variational_autoencoder/variational_autoencoder.py
 # Minibatch Discrimination layer from OpenAI's Improved GAN Techniques: https://github.com/openai/improved-gan
 # Deconv Layer adapted from Radford's DCGAN: https://github.com/Newmu/dcgan_code
+
 from __future__ import division
 import numpy as np
 import theano
-
+import theano.tensor as T
 import lasagne
 import lasagne.layers
 import lasagne.layers.dnn
@@ -26,43 +27,54 @@ from lasagne.layers.dnn import Conv2DDNNLayer as C2D
 from lasagne.layers import TransposedConv2DLayer as TC2D
 from lasagne.layers import ConcatLayer as CL
 
-import theano.tensor as T
+# Stuff for DeconvLayer
 from theano.sandbox.cuda.basic_ops import (as_cuda_ndarray_variable,
                                            host_from_gpu,
                                            gpu_contiguous, HostFromGpu,
                                            gpu_alloc_empty)
 from theano.sandbox.cuda.dnn import GpuDnnConvDesc, GpuDnnConv, GpuDnnConvGradI, dnn_conv, dnn_pool
 from math import sqrt
-
-
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
-
-
 from mask_generator import MaskGenerator
 
 # Multiscale Dilated Convolution Block
+# This function (not a layer in and of itself, though you could make it one) returns a set of concatenated conv2d and dilatedconv2d layers.
+# Each layer uses the same basic filter W, operating at a different dilation factor (or taken as the mean of W for the 1x1 conv).
+# The channel-wise output of each layer is weighted by a set of coefficients, which are initialized to 1 / the total number of dilation scales,
+# meaning that were starting by taking an elementwise mean. These should be learnable parameters.
+
+# NOTES: - I'm considering changing the variable names to be more descriptive, and look less like ridiculous academic code. It's on the to-do list.
+#        - I keep the bias and nonlinearity out of the default definition for this layer, as I expect it to be batchnormed and nonlinearized in the model config.
 def MDCL(incoming,num_filters,scales,name):
-    # Total number of layers
-    # W = theano.shared(lasagne.utils.floatX(Orthogonal(
+
+    # W initialization method--this should also work as Orthogonal('relu'), but I have yet to validate that as thoroughly.
     winit = initmethod(0.02)
+    
+    # Initialization method for the coefficients
     sinit = lasagne.init.Constant(1.0/(1+len(scales)))
+    
     # Number of incoming channels
     ni =lasagne.layers.get_output_shape(incoming)[1]
-    # get weight parameter for this layer
+    
+    # Weight parameter--the primary parameter for this block
     W = theano.shared(lasagne.utils.floatX(winit.sample((num_filters,lasagne.layers.get_output_shape(incoming)[1],3,3))),name=name+'W')
+    
+    # Primary Convolution Layer--No Dilation
     n = C2D(incoming = incoming,
                             num_filters = num_filters,
                             filter_size = [3,3],
                             stride = [1,1],
                             pad = (1,1),
-                            W = W*theano.shared(lasagne.utils.floatX(sinit.sample(num_filters)), name+'_coeff_base').dimshuffle(0,'x','x','x'),
+                            W = W*theano.shared(lasagne.utils.floatX(sinit.sample(num_filters)), name+'_coeff_base').dimshuffle(0,'x','x','x'), # Note the broadcasting dimshuffle for the num_filter scalars.
                             b = None,
                             nonlinearity = None,
                             name = name+'base'
                         )
-    # nc = [theano.shared(lasagne.utils.floatX(1.0/(1+len(scales))), name+'coeff_base')]                    
+    # List of remaining layers. This should probably just all be concatenated into a single list rather than being a separate deal.
     nd = []    
     for i,scale in enumerate(scales):
+        
+        # I don't think 0 dilation is technically defined (or if it is it's just the regular filter) but I use it here as a convenient keyword to grab the 1x1 mean conv.
         if scale==0:
             nd.append(C2D(incoming = incoming,
                             num_filters = num_filters,
@@ -73,31 +85,35 @@ def MDCL(incoming,num_filters,scales,name):
                             b = None,
                             nonlinearity = None,
                             name = name+str(scale)))
+        # Note the dimshuffles in this layer--these are critical as the current DilatedConv2D implementation uses a backward pass.
         else:
             nd.append(lasagne.layers.DilatedConv2DLayer(incoming = lasagne.layers.PadLayer(incoming = incoming, width=(scale,scale)),
                                 num_filters = num_filters,
                                 filter_size = [3,3],
                                 dilation=(scale,scale),
-                                W = W.dimshuffle(1,0,2,3)*theano.shared(lasagne.utils.floatX(sinit.sample(num_filters)), name+'_coeff_'+str(scale)).dimshuffle('x',0,'x','x'),#.dimshuffle('x',0),
+                                W = W.dimshuffle(1,0,2,3)*theano.shared(lasagne.utils.floatX(sinit.sample(num_filters)), name+'_coeff_'+str(scale)).dimshuffle('x',0,'x','x'),
                                 b = None,
                                 nonlinearity = None,
                                 name =  name+str(scale)))
     return ESL(nd+[n])
 
-# MDC-based Upsample Layer
+# MDC-based Upsample Layer.
+# This is a prototype I don't make use of extensively. It's operational but it doesn't seem to improve results yet.
 def USL(incoming,num_filters,scales,name):
     
-
-    
-    
-    # Total number of layers
-    # W = theano.shared(lasagne.utils.floatX(Orthogonal(
+    # W initialization method--this should also work as Orthogonal('relu'), but I have yet to validate that as thoroughly.
     winit = initmethod(0.02)
+    
+    # Initialization method for the coefficients
     sinit = lasagne.init.Constant(1.0/(1+len(scales)))
+    
     # Number of incoming channels
     ni =lasagne.layers.get_output_shape(incoming)[1]
-    # get weight parameter for this layer
+    
+    # Weight parameter--the primary parameter for this block
     W = theano.shared(lasagne.utils.floatX(winit.sample((num_filters,lasagne.layers.get_output_shape(incoming)[1],3,3))),name=name+'W')
+    
+    # Primary Convolution Layer--No Dilation
     n = C2D(incoming = Upscale2DLayer(incoming,2),
                             num_filters = num_filters,
                             filter_size = [3,3],
@@ -108,20 +124,11 @@ def USL(incoming,num_filters,scales,name):
                             nonlinearity = None,
                             name = name+'base'
                         )
-    print('out is '+str(lasagne.layers.get_output_shape(n,(128,3,64,64))))                    
-    # nc = [theano.shared(lasagne.utils.floatX(1.0/(1+len(scales))), name+'coeff_base')]                    
+    # Remaining layers              
     nd = []    
     for i,scale in enumerate(scales):                    
-        nd.append(lasagne.layers.DilatedConv2DLayer(incoming = lasagne.layers.PadLayer(incoming = Upscale2DLayer(incoming,2), width=(scale,scale)),
-                            num_filters = num_filters,
-                            filter_size = [3,3],
-                            dilation=(scale,scale),
-                            W = W.dimshuffle(1,0,2,3)*theano.shared(lasagne.utils.floatX(sinit.sample(num_filters)), name+'_coeff_'+str(scale)).dimshuffle('x',0,'x','x'),#.dimshuffle('x',0),
-                            b = None,
-                            nonlinearity = None,
-                            name =  name+str(scale)))
-        # nc.append()
-    nd.append(C2D(incoming = Upscale2DLayer(incoming,2),
+        if scale==0:
+            nd.append(C2D(incoming = Upscale2DLayer(incoming,2),
                             num_filters = num_filters,
                             filter_size = [1,1],
                             stride = [1,1],
@@ -131,6 +138,17 @@ def USL(incoming,num_filters,scales,name):
                             nonlinearity = None,
                             name = name+'1x1'
                         ))
+        else:
+            nd.append(lasagne.layers.DilatedConv2DLayer(incoming = lasagne.layers.PadLayer(incoming = Upscale2DLayer(incoming,2), width=(scale,scale)),
+                                num_filters = num_filters,
+                                filter_size = [3,3],
+                                dilation=(scale,scale),
+                                W = W.dimshuffle(1,0,2,3)*theano.shared(lasagne.utils.floatX(sinit.sample(num_filters)), name+'_coeff_'+str(scale)).dimshuffle('x',0,'x','x'),
+                                b = None,
+                                nonlinearity = None,
+                                name =  name+str(scale)))
+    
+    # A single deconv layer is also concatenated here. Like I said, it's a prototype!
     nd.append(DeconvLayer(incoming = incoming,
                             num_filters = num_filters,
                             filter_size = [3,3],
@@ -141,19 +159,28 @@ def USL(incoming,num_filters,scales,name):
                             nonlinearity = None,
                             name = name+'deconv'
                         ))
-    print('out is '+str(lasagne.layers.get_output_shape(nd[-1],(128,3,64,64)))) 
+
     return ESL(nd+[n])     
 
-#MDC-based Downsample Layer    
+#MDC-based Downsample Layer.
+# This is a prototype I don't make use of extensively. It's operational and it seems like it works alright, but it's restrictively expensive
+# and I am not PARALLELICUS, god of GPUs, so I don't have the memory to spare for it.   
+# Note that this layer does not currently support having a 0 scale like the others do, and just has a 1x1-stride2 conv by default.
 def DSL(incoming,num_filters,scales,name):
-    # Total number of layers
-    # W = theano.shared(lasagne.utils.floatX(Orthogonal(
+    
+    # W initialization method--this should also work as Orthogonal('relu'), but I have yet to validate that as thoroughly.
     winit = initmethod(0.02)
+    
+    # Initialization method for the coefficients
     sinit = lasagne.init.Constant(1.0/(1+len(scales)))
+    
     # Number of incoming channels
     ni =lasagne.layers.get_output_shape(incoming)[1]
-    # get weight parameter for this layer
+    
+    # Weight parameter--the primary parameter for this block
     W = theano.shared(lasagne.utils.floatX(winit.sample((num_filters,lasagne.layers.get_output_shape(incoming)[1],3,3))),name=name+'W')
+    
+    # Main layer--3x3 conv with stride 2
     n = C2D(incoming = incoming,
                             num_filters = num_filters,
                             filter_size = [3,3],
@@ -165,7 +192,7 @@ def DSL(incoming,num_filters,scales,name):
                             name = name+'base'
                         )
 
-    # nc = [theano.shared(lasagne.utils.floatX(1.0/(1+len(scales))), name+'coeff_base')]                    
+                      
     nd = []    
     for i,scale in enumerate(scales):
 
@@ -197,9 +224,10 @@ def DSL(incoming,num_filters,scales,name):
                             nonlinearity = None,
                             name = name+'1x1'
                         ))
-        # nc.append()
    
     return ESL(nd+[n])    
+
+# Beta Distribution Layer   
 # This layer takes in a batch_size batch, 2-channel, NxN dimension layer and returns the output of the first channel
 # divided by the sum of both channels, which is equivalent to finding the expected value for a beta distribution.
 # Note that this version of the layer scales to {-1,1} for compatibility with tanh.
@@ -216,13 +244,14 @@ class beta_layer(lasagne.layers.MergeLayer):
         # return 2*T.true_div(alpha,T.add(alpha,beta)+1e-8)-1
         return 2*(alpha/(alpha+beta+1e-8))-1
 
-# Convenience Function to produce a residual MDCL block        
+# Convenience Function to produce a residual pre-activation MDCL block        
 def MDBLOCK(incoming,num_filters,scales,name,nonlinearity):
     return NL(BN(ESL([incoming,
          MDCL(NL(BN(MDCL(NL(BN(incoming,name=name+'bnorm0'),nonlinearity),num_filters,scales,name),name=name+'bnorm1'),nonlinearity),
               num_filters,
               scales,
-              name+'2')]),name=name+'bnorm2'),nonlinearity)         
+              name+'2')]),name=name+'bnorm2'),nonlinearity)  
+              
 # Gaussian Sample Layer for VAE from Tencia Lee
 class GaussianSampleLayer(lasagne.layers.MergeLayer):
     def __init__(self, mu, logsigma, rng=None, **kwargs):
@@ -250,7 +279,7 @@ class DeconvLayer(lasagne.layers.conv.BaseConvLayer):
         super(DeconvLayer, self).__init__(
                 incoming, num_filters, filter_size, stride, crop, untie_biases,
                 W, b, nonlinearity, flip_filters, n=2, **kwargs)
-        # rename self.pad to self.crop:
+        # rename self.crop to self.pad
         self.crop = self.pad
         del self.pad
 
@@ -273,24 +302,14 @@ class DeconvLayer(lasagne.layers.conv.BaseConvLayer):
 
     def convolve(self, input, **kwargs):
     
-        # def deconv(X, w, subsample=(1, 1), border_mode=(0, 0), conv_mode='conv'):
+        # Straight outta Radford
         img = gpu_contiguous(input)
         kerns = gpu_contiguous(self.W)
         desc = GpuDnnConvDesc(border_mode=self.crop, subsample=self.stride,
                               conv_mode='conv')(gpu_alloc_empty(img.shape[0], kerns.shape[1], img.shape[2]*self.stride[0], img.shape[3]*self.stride[1]).shape, kerns.shape)
         out = gpu_alloc_empty(img.shape[0], kerns.shape[1], img.shape[2]*self.stride[0], img.shape[3]*self.stride[1])
         conved = GpuDnnConvGradI()(kerns, img, out, desc)
-        # return d_img
-        # border_mode = 'half' if self.crop == 'same' else self.crop
-        # op = T.nnet.abstract_conv.AbstractConv2d_gradInputs(
-            # imshp=self.output_shape,
-            # kshp=self.get_W_shape(),
-            # subsample=self.stride, border_mode=border_mode,
-            # filter_flip=not self.flip_filters)
-        # output_size = self.output_shape[2:]
-        # if any(s is None for s in output_size):
-            # output_size = self.get_output_shape_for(input.shape)[2:]
-        # conved = op(self.W, input, output_size)
+
         return conved
         
 # Minibatch discrimination layer from OpenAI's improved GAN techniques       
@@ -421,7 +440,8 @@ def pd(num_layers=2,num_filters=32,filter_size=(3,3),pad=1,stride = (1,1),nonlin
 # def C2D(incoming = None, num_filters = 32, filter_size= [3,3],pad = 'same',stride = [1,1], W = initmethod('relu'),nonlinearity = elu,name = None):
     # return lasagne.layers.dnn.Conv2DDNNLayer(incoming,num_filters,filter_size,stride,pad,False,W,None,nonlinearity,False)
 
-# Shape-Preserving Gaussian Sample layer for latent Tensors    
+# Shape-Preserving Gaussian Sample layer for latent vectors with spatial dimensions.
+# This is a holdover from an "old" (i.e. I abandoned it last month) idea. 
 class GSL(lasagne.layers.MergeLayer):
     def __init__(self, mu, logsigma, rng=None, **kwargs):
         self.rng = rng if rng else RandomStreams(lasagne.random.get_rng().randint(1,2147462579))
@@ -440,7 +460,9 @@ class GSL(lasagne.layers.MergeLayer):
 # Convenience function to return list of sampled latent layers
 def GL(mu,ls):
     return([GSL(z_mu,z_ls) for z_mu,z_ls in zip(mu,ls)])
-    
+
+# Convenience function to return a residual layer. It's not really that much more convenient than ESL'ing,
+# but I like being able to see when I'm using Residual connections as opposed to Elemwise-sums    
 def ResLayer(incoming, IB,nonlinearity):
     return NL(ESL([IB,incoming]),nonlinearity)
 
@@ -513,7 +535,9 @@ class DIML(lasagne.layers.DenseLayer):
         if self.b is not None:
             activation = activation + self.b.dimshuffle('x', 0)
         return self.nonlinearity(activation)        
-# Conditioning Masked Layer        
+
+# Conditioning Masked Layer 
+# Currently not used.       
 # class CML(MaskedLayer):
 
     # def __init__(self, incoming, num_units, mask_generator,use_cond_mask=False,U=lasagne.init.GlorotUniform(),W=lasagne.init.GlorotUniform(),
@@ -542,15 +566,23 @@ class MADE(lasagne.layers.Layer):
     def __init__(self,z,hidden_sizes,name,nonlinearity=lasagne.nonlinearities.rectify,output_nonlinearity=None, **kwargs):
         # self.rng = rng if rng else RandomStreams(lasagne.random.get_rng().randint(1234))
         super(MADE, self).__init__(z, **kwargs)
-        # n is a list of integers, where the length of the list is the number of hidden layers
-        # and the integer in each list entry is the number of hidden units per layer
+        
+        # Incoming latents
         self.z = z
+        
+        # List defining hidden units in each layer
         self.hidden_sizes = hidden_sizes
+        
+        # Layer name for saving parameters.
         self.name = name
+        
         # nonlinearity
         self.nonlinearity = nonlinearity
+        
+        # Output nonlinearity
         self.output_nonlinearity = output_nonlinearity
-        # Control parameters from original made
+        
+        # Control parameters from original MADE
         mask_distribution=0
         use_cond_mask = False
         direct_input_connect = "Output"
@@ -569,8 +601,11 @@ class MADE(lasagne.layers.Layer):
                                   W = lasagne.init.Orthogonal('relu'),
                                   nonlinearity=self.nonlinearity,
                                   name = self.name+'_input')
+                                  
         self.layers = [self.input_layer]
+        
         for i in range(1, len(hidden_sizes)):
+        
             self.layers += [MaskedLayer(incoming = self.layers[-1], 
                                        num_units = hidden_sizes[i], 
                                        mask_generator = self.mask_generator,
@@ -581,6 +616,7 @@ class MADE(lasagne.layers.Layer):
                                                         
         outputLayerIdx = len(self.layers)
         
+        # Output layer
         self.layers += [MaskedLayer(incoming = self.layers[-1], 
                                        num_units = lasagne.layers.get_output_shape(z)[1], 
                                        mask_generator = self.mask_generator,

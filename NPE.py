@@ -72,10 +72,10 @@ ZZ = T.TensorType('float32', [False]*2)('Z')
 print('Compiling Theano Functions')
 
 # X_hat, Output given some latent input
-Xh = lasagne.layers.get_output(model['l_out'],{model['l_latents']:ZZ},deterministic=True)
+Xh = lasagne.layers.get_output(model['l_out'],{model['l_Z']:ZZ},deterministic=True)
 
 # Latent Values, used for inference given some input 
-latent_values = lasagne.layers.get_output(model['l_latents'],{model['l_in']:X},deterministic=True)
+latent_values = lasagne.layers.get_output(model['l_Z'],{model['l_in']:X},deterministic=True)
 
 # Function for getting latent values
 Zfn = theano.function([X],latent_values,on_unused_input='warn') 
@@ -115,6 +115,12 @@ params = list(set(lasagne.layers.get_all_params(model['l_out'],trainable=True)+\
                  
 GANcheckpoints.load_weights(weights_fname,params)
 
+# Shuffle weights if using IAF with MADE
+if 'l_IAF_mu' in model:
+    print ('Shuffling MADE masks')
+    model['l_IAF_mu'].reset("Once")
+    model['l_IAF_ls'].reset("Once")
+  
 ### Prepare GUI functions
 print('Compiling remaining functions')
 

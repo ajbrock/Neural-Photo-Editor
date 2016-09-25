@@ -15,8 +15,7 @@ from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 import lasagne
 from lasagne.layers import SliceLayer as SL
 
-import voxnet
-import CAcheckpoints
+
 import GANcheckpoints
 from collections import OrderedDict
 import matplotlib
