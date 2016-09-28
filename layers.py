@@ -13,7 +13,7 @@ import theano
 import theano.tensor as T
 import lasagne
 import lasagne.layers
-import lasagne.layers.dnn
+
 from lasagne.layers import SliceLayer as SL
 from lasagne.layers import batch_norm as BN
 from lasagne.layers import ElemwiseSumLayer as ESL
@@ -23,16 +23,11 @@ from lasagne.init import Normal as initmethod
 from lasagne.nonlinearities import elu
 from lasagne.nonlinearities import rectify as relu
 from lasagne.nonlinearities import LeakyRectify as lrelu
-from lasagne.layers.dnn import Conv2DDNNLayer as C2D
+
 from lasagne.layers import TransposedConv2DLayer as TC2D
 from lasagne.layers import ConcatLayer as CL
 
-# Stuff for DeconvLayer
-from theano.sandbox.cuda.basic_ops import (as_cuda_ndarray_variable,
-                                           host_from_gpu,
-                                           gpu_contiguous, HostFromGpu,
-                                           gpu_alloc_empty)
-from theano.sandbox.cuda.dnn import GpuDnnConvDesc, GpuDnnConv, GpuDnnConvGradI, dnn_conv, dnn_pool
+
 from math import sqrt
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 from mask_generator import MaskGenerator
@@ -45,8 +40,9 @@ from mask_generator import MaskGenerator
 
 # NOTES: - I'm considering changing the variable names to be more descriptive, and look less like ridiculous academic code. It's on the to-do list.
 #        - I keep the bias and nonlinearity out of the default definition for this layer, as I expect it to be batchnormed and nonlinearized in the model config.
-def MDCL(incoming,num_filters,scales,name):
-
+def MDCL(incoming,num_filters,scales,name,dnn=True):
+    if dnn:
+        from lasagne.layers.dnn import Conv2DDNNLayer as C2D
     # W initialization method--this should also work as Orthogonal('relu'), but I have yet to validate that as thoroughly.
     winit = initmethod(0.02)
     
@@ -99,7 +95,9 @@ def MDCL(incoming,num_filters,scales,name):
 
 # MDC-based Upsample Layer.
 # This is a prototype I don't make use of extensively. It's operational but it doesn't seem to improve results yet.
-def USL(incoming,num_filters,scales,name):
+def USL(incoming,num_filters,scales,name,dnn=True):
+    if dnn:
+        from lasagne.layers.dnn import Conv2DDNNLayer as C2D
     
     # W initialization method--this should also work as Orthogonal('relu'), but I have yet to validate that as thoroughly.
     winit = initmethod(0.02)
@@ -166,8 +164,9 @@ def USL(incoming,num_filters,scales,name):
 # This is a prototype I don't make use of extensively. It's operational and it seems like it works alright, but it's restrictively expensive
 # and I am not PARALLELICUS, god of GPUs, so I don't have the memory to spare for it.   
 # Note that this layer does not currently support having a 0 scale like the others do, and just has a 1x1-stride2 conv by default.
-def DSL(incoming,num_filters,scales,name):
-    
+def DSL(incoming,num_filters,scales,name,dnn=True):
+    if dnn:
+        from lasagne.layers.dnn import Conv2DDNNLayer as C2D
     # W initialization method--this should also work as Orthogonal('relu'), but I have yet to validate that as thoroughly.
     winit = initmethod(0.02)
     
@@ -289,6 +288,7 @@ class DeconvLayer(lasagne.layers.conv.BaseConvLayer):
         return (num_input_channels, self.num_filters) + self.filter_size
 
     def get_output_shape_for(self, input_shape):
+        
         # when called from the constructor, self.crop is still called self.pad:
         crop = getattr(self, 'crop', getattr(self, 'pad', None))
         crop = crop if isinstance(crop, tuple) else (crop,) * self.n
@@ -301,7 +301,13 @@ class DeconvLayer(lasagne.layers.conv.BaseConvLayer):
                              # self.stride, crop)))
 
     def convolve(self, input, **kwargs):
-    
+        
+        # Messy to have these imports here, but seems to allow for switching DNN off.
+        from theano.sandbox.cuda.basic_ops import (as_cuda_ndarray_variable,
+                                           host_from_gpu,
+                                           gpu_contiguous, HostFromGpu,
+                                           gpu_alloc_empty)
+        from theano.sandbox.cuda.dnn import GpuDnnConvDesc, GpuDnnConv, GpuDnnConvGradI, dnn_conv, dnn_pool 
         # Straight outta Radford
         img = gpu_contiguous(input)
         kerns = gpu_contiguous(self.W)

@@ -61,7 +61,7 @@ cfg = config_module.cfg
 weights_fname = str(config_path)[:-3]+'.npz'
 
 # Get Model
-model = config_module.get_model(interp=False)
+model = config_module.get_model(dnn=True)
 
 # Input Tensor
 X = T.TensorType('float32', [False]*4)('X')

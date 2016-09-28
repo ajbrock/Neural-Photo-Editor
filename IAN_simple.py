@@ -7,7 +7,7 @@ import numpy as np
 
 import lasagne
 import lasagne.layers
-import lasagne.layers.dnn
+
 from lasagne.layers import SliceLayer as SL
 from lasagne.layers import batch_norm as BN
 from lasagne.layers import ElemwiseSumLayer as ESL
@@ -17,22 +17,18 @@ from lasagne.init import Normal as initmethod
 from lasagne.nonlinearities import elu
 from lasagne.nonlinearities import rectify as relu
 from lasagne.nonlinearities import LeakyRectify as lrelu
-from lasagne.layers.dnn import Conv2DDNNLayer as C2D
+
 from lasagne.layers import TransposedConv2DLayer as TC2D
 from lasagne.layers import ConcatLayer as CL
 
 import theano.tensor as T
-from theano.sandbox.cuda.basic_ops import (as_cuda_ndarray_variable,
-                                           host_from_gpu,
-                                           gpu_contiguous, HostFromGpu,
-                                           gpu_alloc_empty)
-from theano.sandbox.cuda.dnn import GpuDnnConvDesc, GpuDnnConv, GpuDnnConvGradI, dnn_conv, dnn_pool
+
 from math import sqrt
 
 
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
-from layers import GaussianSampleLayer, DeconvLayer,MinibatchLayer
+from layers import GaussianSampleLayer,MinibatchLayer 
 lr_schedule = { 0: 0.0002}
 cfg = {'batch_size' : 128,
        'learning_rate' : lr_schedule,
@@ -57,7 +53,20 @@ cfg = {'batch_size' : 128,
       
 
     
-def get_model(interp=False):
+def get_model(dnn=True):
+    if dnn:
+        import lasagne.layers.dnn
+        from lasagne.layers.dnn import Conv2DDNNLayer as C2D
+        from theano.sandbox.cuda.basic_ops import (as_cuda_ndarray_variable,
+                                           host_from_gpu,
+                                           gpu_contiguous, HostFromGpu,
+                                           gpu_alloc_empty)
+        from theano.sandbox.cuda.dnn import GpuDnnConvDesc, GpuDnnConv, GpuDnnConvGradI, dnn_conv, dnn_pool
+        from layers import DeconvLayer
+    else:
+        import lasagne.layers
+        from lasagne.layers import Conv2DLayer as C2D
+    
     dims, n_channels, n_classes = tuple(cfg['dims']), cfg['n_channels'], cfg['n_classes']
     shape = (None, n_channels)+dims
     l_in = lasagne.layers.InputLayer(shape=shape)
@@ -69,6 +78,7 @@ def get_model(interp=False):
         pad = (2,2),
         W = initmethod(0.02),
         nonlinearity = lrelu(0.2),
+        flip_filters=False,
         name =  'enc_conv1'
         )
     l_enc_conv2 = BN(C2D(
@@ -79,6 +89,7 @@ def get_model(interp=False):
         pad = (2,2),
         W = initmethod(0.02),
         nonlinearity = lrelu(0.2),
+        flip_filters=False,
         name =  'enc_conv2'
         ),name = 'bnorm2')
     l_enc_conv3 = BN(C2D(
@@ -89,6 +100,7 @@ def get_model(interp=False):
         pad = (2,2),
         W = initmethod(0.02),
         nonlinearity = lrelu(0.2),
+        flip_filters=False,
         name =  'enc_conv3'
         ),name = 'bnorm3')
     l_enc_conv4 = BN(C2D(
@@ -99,6 +111,7 @@ def get_model(interp=False):
         pad = (2,2),
         W = initmethod(0.02),
         nonlinearity = lrelu(0.2),
+        flip_filters=False,
         name =  'enc_conv4'
         ),name = 'bnorm4')         
     l_enc_fc1 = BN(DL(
@@ -124,48 +137,91 @@ def get_model(interp=False):
         incoming = l_dec_fc2,
         shape = ([0],1024,4,4),
         )
-    l_dec_conv1 = BN(DeconvLayer(
-        incoming = l_unflatten,
-        num_filters = 512,
-        filter_size = [5,5],
-        stride = [2,2],
-        crop = (2,2),
-        W = initmethod(0.02),
-        nonlinearity = relu,
-        name =  'dec_conv1'
-        ),name = 'bnorm_dc1')
-    l_dec_conv2 = BN(DeconvLayer(
-        incoming = l_dec_conv1,
-        num_filters = 256,
-        filter_size = [5,5],
-        stride = [2,2],
-        crop = (2,2),
-        W = initmethod(0.02),
-        nonlinearity = relu,
-        name =  'dec_conv2'
-        ),name = 'bnorm_dc2')
-    l_dec_conv3 = BN(DeconvLayer(
-        incoming = l_dec_conv2,
-        num_filters = 128,
-        filter_size = [5,5],
-        stride = [2,2],
-        crop = (2,2),
-        W = initmethod(0.02),
-        nonlinearity = relu,
-        name =  'dec_conv3'
-        ),name = 'bnorm_dc3')
-    l_out = DeconvLayer(
-        incoming = l_dec_conv3,
-        num_filters = 3,
-        filter_size = [5,5],
-        stride = [2,2],
-        crop = (2,2),
-        W = initmethod(0.02),
-        b = None,
-        nonlinearity = lasagne.nonlinearities.tanh,
-        name =  'dec_out'
-        )
-
+    if dnn:
+        l_dec_conv1 = BN(DeconvLayer(
+            incoming = l_unflatten,
+            num_filters = 512,
+            filter_size = [5,5],
+            stride = [2,2],
+            crop = (2,2),
+            W = initmethod(0.02),
+            nonlinearity = relu,
+            name =  'dec_conv1'
+            ),name = 'bnorm_dc1')
+        l_dec_conv2 = BN(DeconvLayer(
+            incoming = l_dec_conv1,
+            num_filters = 256,
+            filter_size = [5,5],
+            stride = [2,2],
+            crop = (2,2),
+            W = initmethod(0.02),
+            nonlinearity = relu,
+            name =  'dec_conv2'
+            ),name = 'bnorm_dc2')
+        l_dec_conv3 = BN(DeconvLayer(
+            incoming = l_dec_conv2,
+            num_filters = 128,
+            filter_size = [5,5],
+            stride = [2,2],
+            crop = (2,2),
+            W = initmethod(0.02),
+            nonlinearity = relu,
+            name =  'dec_conv3'
+            ),name = 'bnorm_dc3')
+        l_out = DeconvLayer(
+            incoming = l_dec_conv3,
+            num_filters = 3,
+            filter_size = [5,5],
+            stride = [2,2],
+            crop = (2,2),
+            W = initmethod(0.02),
+            b = None,
+            nonlinearity = lasagne.nonlinearities.tanh,
+            name =  'dec_out'
+            )
+    else:    
+        l_dec_conv1 = SL(SL(BN(TC2D(
+            incoming = l_unflatten,
+            num_filters = 512,
+            filter_size = [5,5],
+            stride = [2,2],
+            crop = (1,1),
+            W = initmethod(0.02),
+            nonlinearity = relu,
+            name =  'dec_conv1'
+            ),name = 'bnorm_dc1'),indices=slice(1,None),axis=2),indices=slice(1,None),axis=3)
+        l_dec_conv2 = SL(SL(BN(TC2D(
+            incoming = l_dec_conv1,
+            num_filters = 256,
+            filter_size = [5,5],
+            stride = [2,2],
+            crop = (1,1),
+            W = initmethod(0.02),
+            nonlinearity = relu,
+            name =  'dec_conv2'
+            ),name = 'bnorm_dc2'),indices=slice(1,None),axis=2),indices=slice(1,None),axis=3)
+        l_dec_conv3 = SL(SL(BN(TC2D(
+            incoming = l_dec_conv2,
+            num_filters = 128,
+            filter_size = [5,5],
+            stride = [2,2],
+            crop = (1,1),
+            W = initmethod(0.02),
+            nonlinearity = relu,
+            name =  'dec_conv3'
+            ),name = 'bnorm_dc3'),indices=slice(1,None),axis=2),indices=slice(1,None),axis=3)
+        l_out = SL(SL(TC2D(
+            incoming = l_dec_conv3,
+            num_filters = 3,
+            filter_size = [5,5],
+            stride = [2,2],
+            crop = (1,1),
+            W = initmethod(0.02),
+            b = None,
+            nonlinearity = lasagne.nonlinearities.tanh,
+            name =  'dec_out'
+            ),indices=slice(1,None),axis=2),indices=slice(1,None),axis=3)
+# l_in,num_filters=1,filter_size=[5,5],stride=[2,2],crop=[1,1],W=dc.W,b=None,nonlinearity=None)
     minibatch_discrim =  MinibatchLayer(lasagne.layers.GlobalPoolLayer(l_enc_conv4), num_kernels=500,name='minibatch_discrim')    
     l_discrim = DL(incoming = minibatch_discrim, 
         num_units = 1,

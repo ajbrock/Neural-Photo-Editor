@@ -10,8 +10,7 @@ To run the Neural Photo Editor, you will need:
 
 - [Theano](http://deeplearning.net/software/theano/), development version.  
 - [lasagne](http://lasagne.readthedocs.io/en/latest/user/installation.html), development version.
-- I highly recommend [cuDNN](https://developer.nvidia.com/cudnn) as speed is key. You'll need to uncomment my explicit DNN calls if you wish to not use it.
-NOTE: I am currently working on a non-cuDNN implementation that should allow for non-NVIDIA GPUs (and maybe CPUs too)--stay tuned!
+- I highly recommend [cuDNN](https://developer.nvidia.com/cudnn) as speed is key, but it is not a dependency.
 - numpy, scipy, PIL, Tkinter and tkColorChooser, but it is likely that your python distribution already has those.
 
 ## Running the NPE
@@ -21,12 +20,16 @@ If you're on a Windows machine, you will want to create a .theanorc file and at 
 
 If you're on a linux machine, you can just insert THEANO_FLAGS=floatX=float32 before the command line call.
 
+If you don't have cuDNN, simply change line 64 of the NPE.py file from dnn=True to dnn=False. Note that I only have the non-cuDNN option working for IAN_simple.
+
 Then, run the command:
 
 ```sh
 python NPE.py
 ```
-If you wish to use a different model, simply edit the line with "config path" in the NPE.py file. You can make use of any model with an inference mechanism (VAE or ALI-based GAN).
+If you wish to use a different model, simply edit the line with "config path" in the NPE.py file. 
+
+You can make use of any model with an inference mechanism (VAE or ALI-based GAN).
 
 ## Commands
 - You can paint the image by picking a color and painting on the image, or paint in the latent space canvas (the red and blue tiles below the image). 
@@ -59,15 +62,19 @@ python sample_IAN.py IAN.py
 ```
 
 Note that you will need [matplotlib](http://matplotlib.org/). to do so.
-## Known Bugs
+## Known Issues/Bugs
 Occasionally the color picker freaks out and returns "None"s rather than values. Simply re-choose a color to fix this.
+
 My MADE layer currently only accepts hidden unit sizes that are equal to the size of the latent vector, which will present itself as a BAD_PARAM error.
+
 Since the MADE really only acts as an autoregressive randomizer I'm not too worried about this, but it does bare looking into.
 
+I messed around with the keywords for get_model, you'll need to deal with these if you wish to run any model other than IAN_simple through the editor.
 
 ## Notes
 More pre-trained models (which will be in the repo rather than a drive folder) and the remainder of the IAN experiments (including SVHN and the full pre-trained IAN used to generate the samples from the paper) coming soon.
-I'm considering putting up a TensorFlow implementation, if people would be interested in that, let me know (maybe with an Issues 
+
+I'm considering putting up a TensorFlow implementation, if people would be interested in that, let me know (maybe with an Issue).
 
 ## Acknowledgments
 This code contains lasagne layers and other goodies adopted from a number of places:
@@ -76,4 +83,5 @@ This code contains lasagne layers and other goodies adopted from a number of pla
 - Minibatch Discrimination layer from OpenAI's Improved GAN Techniques: https://github.com/openai/improved-gan
 - Deconv Layer adapted from Radford's DCGAN: https://github.com/Newmu/dcgan_code
 - Image-Grid Plotter adopted from AlexMLamb's Discriminative Regularization: https://github.com/vdumoulin/discgen
+- Metrics_logging and checkpoints adopted from Daniel Maturana's VoxNet: https://github.com/dimatura/voxnet
 
