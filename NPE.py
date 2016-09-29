@@ -443,7 +443,7 @@ def Reset():
     update_canvas(w)
     update_photo(IM,output)
 
-def SaveNewGIM():
+def UpdateGIM():
     global GIM,IM
     GIM = IM
     Reset()# Recalc the latent space for the new ground-truth image.
@@ -507,7 +507,7 @@ Scale(master, from_=-255, to=255,length=canvas_width, variable = color,orient=HO
 # Buttons and brushes
 Button(f, text="Sample", command=sample).pack(side=LEFT)
 Button(f, text="Reset", command=Reset).pack(side=LEFT)
-Button(f, text="SaveNewGIM", command=SaveNewGIM).pack(side=LEFT)
+Button(f, text="Update", command=UpdateGIM).pack(side=LEFT)
 brush = Canvas(f,width=25,height=25)
 Scale(f, from_=0, to=64,length=100,width=25, variable = d,orient=HORIZONTAL,showvalue=0,command=update_brush).pack(side=LEFT) # Brush diameter scale
 brush.pack(side=LEFT)
