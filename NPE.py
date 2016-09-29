@@ -451,9 +451,11 @@ def update_brush(event):
 # assign color picker values to myRGB
 def getColor():
     global myRGB, mycol
-    col = askcolor()
+    col = askcolor(mycol)
+    if col[0] is None:
+        return # Dont change color if Cancel pressed.
     mycol = col[0]
-    for i in xrange(3): myRGB[0,i,:,:] = col[0][i]; # assign    
+    for i in xrange(3): myRGB[0,i,:,:] = mycol[i]; # assign
     
 # Optional function to "lock" latents so that gradients are always evaluated with respect to 
 # def lock():
