@@ -44,83 +44,14 @@ from collections import OrderedDict
 from PIL import Image, ImageTk
 import numpy as np
 import scipy.misc
-import theano
-import lasagne
-import theano.tensor as T
-import GANcheckpoints # For loading weights
-import imp
 
+
+from models import IAN
 ### Step 1: Create theano functions
 
-# Path to model
-config_path = 'IAN_simple.py'
-config_module = imp.load_source('config',config_path)
-cfg = config_module.cfg
+# Initialize model
+model = IAN(config_path = 'IAN_simple.py', dnn = True)
 
-# Path to model weights
-weights_fname = str(config_path)[:-3]+'.npz'
-
-# Get Model
-model = config_module.get_model(dnn=True)
-
-# Input Tensor
-X = T.TensorType('float32', [False]*4)('X')
-    
-# Latent Input, for providing latent values from the main function
-ZZ = T.TensorType('float32', [False]*2)('Z')
-
-print('Compiling Theano Functions')
-
-# X_hat, Output given some latent input
-Xh = lasagne.layers.get_output(model['l_out'],{model['l_Z']:ZZ},deterministic=True)
-
-# Latent Values, used for inference given some input 
-latent_values = lasagne.layers.get_output(model['l_Z'],{model['l_in']:X},deterministic=True)
-
-# Function for getting latent values
-Zfn = theano.function([X],latent_values,on_unused_input='warn') 
-
-# Difference between Output and Original Image, used for backsolving for latents if no inference mechanism is present
-# L1_loss =T.mean(T.abs_(-Xh+X))
-# update = lasagne.updates.nesterov_momentum(L1_loss,[Z_shared],learning_rate=0.99)
-
-# Image Sampling Function, produces X(Z)
-imsample = theano.function(inputs=[ZZ],outputs=Xh)
-
-# Row and Column Index Variables for evaluating local color gradients
-r1,r2 = T.scalar('r1',dtype='int32'),T.scalar('r2',dtype='int32')
-c1,c2 = T.scalar('c',dtype='int32'),T.scalar('c2',dtype='int32')
-
-# Contextual Paintbrush Tensor
-RGB = T.tensor4('RGB',dtype='float32')
-
-# Image Gradient Function, evaluates the change in latents which would lighten the image in the local area
-imgrad = theano.function([c1,r1,c2,r2,ZZ],T.grad(T.mean(Xh[0,:,r1:r2,c1:c2]),ZZ))
-
-# Image Color Gradient Function, evaluates the change in latents which would push the image towards the local desired RGB value
-# Consider changing this to only take in a smaller RGB array, rather than a full-sized, indexed RGB array.
-# Also consider using the L1 loss instead of L2
-imgradRGB = theano.function([c1,r1,c2,r2,RGB,ZZ],T.grad(T.mean((T.sqr(-Xh[0,:,r1:r2,c1:c2]+RGB[0,:,r1:r2,c1:c2]))),ZZ)) # may need a T.mean
-
-                      
-
-
-# Load weights
-print('Theano functions compiled, loading weights')                                                                                     
-params = list(set(lasagne.layers.get_all_params(model['l_out'],trainable=True)+\
-                 lasagne.layers.get_all_params(model['l_discrim'],trainable=True)+\
-                 [x for x in lasagne.layers.get_all_params(model['l_out'])+\
-                 lasagne.layers.get_all_params(model['l_discrim'])\
-                 if x.name[-4:]=='mean' or x.name[-7:]=='inv_std']))
-                 
-GANcheckpoints.load_weights(weights_fname,params)
-
-# Shuffle weights if using IAF with MADE
-if 'l_IAF_mu' in model:
-    print ('Shuffling MADE masks')
-    model['l_IAF_mu'].reset("Once")
-    model['l_IAF_ls'].reset("Once")
-  
 ### Prepare GUI functions
 print('Compiling remaining functions')
 
@@ -211,7 +142,7 @@ mycol = (0,0,0)
 def update_photo(data=None,widget=None):
     global Z
     if data is None: # By default, assume we're updating with the current value of Z
-        data = np.repeat(np.repeat(np.uint8(from_tanh(imsample(np.float32([Z.flatten()]))[0])),4,1),4,2)
+        data = np.repeat(np.repeat(np.uint8(from_tanh(model.sample_at(np.float32([Z.flatten()]))[0])),4,1),4,2)
     else:
         data = np.repeat(np.repeat(np.uint8(data),4,1),4,2)
     
@@ -306,7 +237,7 @@ def paint( event ):
     [x1,y1,x2,y2] = [coordinate//4 for coordinate in output.coords(pixel_rect)]
     
     # Get dIM/dZ that minimizes the difference between IM and RGB in the domain of the paintbrush
-    temp = np.asarray(imgradRGB(x1,y1,x2,y2,np.float32(to_tanh(myRGB)),np.float32([Z.flatten()]))[0])
+    temp = np.asarray(model.imgradRGB(x1,y1,x2,y2,np.float32(to_tanh(myRGB)),np.float32([Z.flatten()]))[0])
     grad = temp.reshape((10,10))*(1+(x2-x1))
     
     # Update Z
@@ -319,7 +250,7 @@ def paint( event ):
     # Else, update photo
     else:
         # Difference between current image and reconstruction
-        DELTA = imsample(np.float32([Z.flatten()]))[0]-to_tanh(np.float32(RECON))
+        DELTA = model.sample_at(np.float32([Z.flatten()]))[0]-to_tanh(np.float32(RECON))
         
         # Not-Yet-Implemented User Mask feature
         # USER_MASK[y1:y2,x1:x2]+=0.05
@@ -358,11 +289,11 @@ def infer():
     DELTA = np.zeros(np.shape(IM),dtype=np.float32)
     
     # Infer and reshape latents. This can be done without an intermediate variable if desired
-    s = Zfn(np.asarray([to_tanh(IM)],dtype=np.float32))
+    s = model.encode_images(np.asarray([to_tanh(IM)],dtype=np.float32))
     Z = np.reshape(s[0],np.shape(Z))
     
     # Get reconstruction
-    RECON = np.uint8(from_tanh(imsample(np.float32([Z.flatten()]))[0]))
+    RECON = np.uint8(from_tanh(model.sample_at(np.float32([Z.flatten()]))[0]))
     
     # Get error
     ERROR = to_tanh(np.float32(IM)) - to_tanh(np.float32(RECON))
@@ -397,7 +328,7 @@ def paint_latents( event ):
         update_photo(None,output)
         update_canvas(w) # Remove this if you wish to see a more free-form paintbrush
    else:     
-        DELTA = imsample(np.float32([Z.flatten()]))[0]-to_tanh(np.float32(RECON))
+        DELTA = model.sample_at(np.float32([Z.flatten()]))[0]-to_tanh(np.float32(RECON))
         MASK=scipy.ndimage.filters.gaussian_filter(np.min([np.mean(np.abs(DELTA),axis=0),np.ones((64,64))],axis=0),0.7)
         # D = dampen(to_tanh(np.float32(RECON)),MASK*DELTA+(1-MASK)*ERROR)
         D = MASK*DELTA+(1-MASK)*ERROR
@@ -412,7 +343,7 @@ def scroll( event ):
     # x,y = np.floor( ( event.x - (output.winfo_rootx() - master.winfo_rootx()) ) / 4), np.floor( ( event.y - (output.winfo_rooty() - master.winfo_rooty()) ) / 4)
     weight = 0.1
     [x1,y1,x2,y2] = [coordinate//4 for coordinate in output.coords(pixel_rect)]
-    grad = np.reshape(imgrad(x1,y1,x2,y2,np.float32([Z.flatten()]))[0],Z.shape)*(1+(x2-x1))
+    grad = np.reshape(model.imgrad(x1,y1,x2,y2,np.float32([Z.flatten()]))[0],Z.shape)*(1+(x2-x1))
     Z+=np.sign(event.delta)*weight*grad
     update_canvas(w)
     update_photo(None,output)
@@ -424,8 +355,8 @@ def sample():
     # Z = np.random.uniform(low=-1.0,high=1.0,size=(Z.shape[0],Z.shape[1])) # Optionally get uniform sample
     
     # Update reconstruction and error
-    RECON = np.uint8(from_tanh(imsample(np.float32([Z.flatten()]))[0]))
-    ERROR=to_tanh(np.float32(IM)) - to_tanh(np.float32(RECON))
+    RECON = np.uint8(from_tanh(model.sample_at(np.float32([Z.flatten()]))[0]))
+    ERROR = to_tanh(np.float32(IM)) - to_tanh(np.float32(RECON))
     update_canvas(w)
     SAMPLE_FLAG=1
     update_photo(None,output)
@@ -434,10 +365,10 @@ def sample():
 def Reset():
     global GIM,IM,Z, DELTA,RECON,ERROR,USER_MASK,SAMPLE_FLAG
     IM  = GIM
-    Z = np.reshape(Zfn(np.asarray([to_tanh(IM)],dtype=np.float32))[0],np.shape(Z))
+    Z = np.reshape(model.encode_images(np.asarray([to_tanh(IM)],dtype=np.float32))[0],np.shape(Z))
     DELTA = np.zeros(np.shape(IM),dtype=np.float32)
-    RECON = np.uint8(from_tanh(imsample(np.float32([Z.flatten()]))[0]))
-    ERROR=to_tanh(np.float32(IM)) - to_tanh(np.float32(RECON))
+    RECON = np.uint8(from_tanh(model.sample_at(np.float32([Z.flatten()]))[0]))
+    ERROR = to_tanh(np.float32(IM)) - to_tanh(np.float32(RECON))
     USER_MASK*=0
     SAMPLE_FLAG=0
     update_canvas(w)
@@ -455,7 +386,7 @@ def getColor():
     mycol = col[0]
     for i in xrange(3): myRGB[0,i,:,:] = col[0][i]; # assign    
     
-# Optional function to "lock" latents so that gradients are always evaluated with respect to 
+# Optional function to "lock" latents so that gradients are always evaluated with respect to the locked Z
 # def lock():
     # global Z,locked, Zlock, lockbutton
     # lockbutton.config(relief='raised' if locked else 'sunken')

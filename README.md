@@ -1,13 +1,13 @@
 # Neural Photo Editor
 A simple interface for editing natural photos with generative neural networks.
 
-![GUI](http://i.imgur.com/w1U20EI.png)
+![GUI](http://i.imgur.com/dmmFOiG.gif)
 
 This repository contains code for the paper "[Neural Photo Editing with Introspective Adversarial Networks](http://arxiv.org/abs/1609.07093)," and the [Associated Video](https://www.youtube.com/watch?v=FDELBFSeqQs).
 
 ## Installation
 To run the Neural Photo Editor, you will need:
-
+- Python, likely version 2.7. You may be able to use early versions of Python2, but I'm pretty sure there's some incompatibilities with Python3 in here.
 - [Theano](http://deeplearning.net/software/theano/), development version.  
 - [lasagne](http://lasagne.readthedocs.io/en/latest/user/installation.html), development version.
 - I highly recommend [cuDNN](https://developer.nvidia.com/cudnn) as speed is key, but it is not a dependency.
@@ -20,7 +20,7 @@ If you're on a Windows machine, you will want to create a .theanorc file and at 
 
 If you're on a linux machine, you can just insert THEANO_FLAGS=floatX=float32 before the command line call.
 
-If you don't have cuDNN, simply change line 64 of the NPE.py file from dnn=True to dnn=False. Note that I only have the non-cuDNN option working for IAN_simple.
+If you don't have cuDNN, simply change line 56 of the NPE.py file from dnn=True to dnn=False. Note that I presently only have the non-cuDNN option working for IAN_simple.
 
 Then, run the command:
 
@@ -38,7 +38,7 @@ You can make use of any model with an inference mechanism (VAE or ALI-based GAN)
 - Use the reset button to return to the last inferred result.
 - Use the sample button to generate a random latent vector and corresponding image.
 - Use the scroll wheel to lighten or darken an image patch (equivalent to using a pure white or pure black paintbrush). Note that this automatically returns you to sample mode, and may require hitting "infer" rather than "reset" to get back to photo editing.
-
+- Press "Update" to update the ground-truth image (and corresponding reconstruction).
 
 ## Training an IAN on celebA
 You will need [Fuel](https://github.com/mila-udem/fuel) along with the 64x64 version of celebA. See [here](https://github.com/vdumoulin/discgen) for instructions on downloading and preparing it. 
@@ -63,18 +63,19 @@ python sample_IAN.py IAN.py
 
 Note that you will need [matplotlib](http://matplotlib.org/). to do so.
 ## Known Issues/Bugs
-Occasionally the color picker freaks out and returns "None"s rather than values. Simply re-choose a color to fix this.
-
 My MADE layer currently only accepts hidden unit sizes that are equal to the size of the latent vector, which will present itself as a BAD_PARAM error.
 
-Since the MADE really only acts as an autoregressive randomizer I'm not too worried about this, but it does bare looking into.
+Since the MADE really only acts as an autoregressive randomizer I'm not too worried about this, but it does bear looking into.
 
 I messed around with the keywords for get_model, you'll need to deal with these if you wish to run any model other than IAN_simple through the editor.
 
-## Notes
-More pre-trained models (which will be in the repo rather than a drive folder) and the remainder of the IAN experiments (including SVHN and the full pre-trained IAN used to generate the samples from the paper) coming soon.
+Everything is presently just dumped into a single, unorganized directory. I'll be adding folders and cleaning things up soon.
 
-I'm considering putting up a TensorFlow implementation, if people would be interested in that, let me know (maybe with an Issue).
+## Notes
+Remainder of the IAN experiments (including SVHN) coming soon.
+
+I've integrated the plat interface which makes the NPE itself independent of framework, so you should be able to run it with Blocks, TensorFlow, PyTorch, PyCaffe, what have you, by modifying the IAN class provided in models.py.
+
 
 ## Acknowledgments
 This code contains lasagne layers and other goodies adopted from a number of places:
@@ -84,4 +85,4 @@ This code contains lasagne layers and other goodies adopted from a number of pla
 - Deconv Layer adapted from Radford's DCGAN: https://github.com/Newmu/dcgan_code
 - Image-Grid Plotter adopted from AlexMLamb's Discriminative Regularization: https://github.com/vdumoulin/discgen
 - Metrics_logging and checkpoints adopted from Daniel Maturana's VoxNet: https://github.com/dimatura/voxnet
-
+- Plat interface adopted from Tom White's plat: https://github.com/dribnet/plat
