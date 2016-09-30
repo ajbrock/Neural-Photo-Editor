@@ -1,7 +1,7 @@
 # Neural Photo Editor
 A simple interface for editing natural photos with generative neural networks.
 
-![GUI](http://i.imgur.com/dmmFOiG.gif)
+![GUI1](http://i.imgur.com/dmmFOiG.gif) [GUI2](http://i.imgur.com/mStg8nG.gif) [GUI3](http://i.imgur.com/CqjTDFN.gif)
 
 This repository contains code for the paper "[Neural Photo Editing with Introspective Adversarial Networks](http://arxiv.org/abs/1609.07093)," and the [Associated Video](https://www.youtube.com/watch?v=FDELBFSeqQs).
 
@@ -35,10 +35,11 @@ You can make use of any model with an inference mechanism (VAE or ALI-based GAN)
 - You can paint the image by picking a color and painting on the image, or paint in the latent space canvas (the red and blue tiles below the image). 
 - The long horizontal slider controls the magnitude of the latent brush, and the smaller horizontal slider controls the size of both the latent and the main image brush.
 - You can select different entries from the subset of the celebA validation set (included in this repository as an .npz) by typing in a number from 0-999 in the bottom left box and hitting "infer."
-- Use the reset button to return to the last inferred result.
+- Use the reset button to return to the ground truth image.
+- Press "Update" to update the ground-truth image and corresponding reconstruction with the current image. Use "Infer" to return to an original ground truth image from the dataset.
 - Use the sample button to generate a random latent vector and corresponding image.
 - Use the scroll wheel to lighten or darken an image patch (equivalent to using a pure white or pure black paintbrush). Note that this automatically returns you to sample mode, and may require hitting "infer" rather than "reset" to get back to photo editing.
-- Press "Update" to update the ground-truth image (and corresponding reconstruction).
+
 
 ## Training an IAN on celebA
 You will need [Fuel](https://github.com/mila-udem/fuel) along with the 64x64 version of celebA. See [here](https://github.com/vdumoulin/discgen) for instructions on downloading and preparing it. 
