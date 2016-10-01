@@ -32,6 +32,27 @@ from math import sqrt
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 from mask_generator import MaskGenerator
 
+# Subpixel Upsample Layer from (https://arxiv.org/abs/1609.05158)
+# This layer uses a set of r^2 inc_subtensor calls to reorganize the tensor in a subpixel-layer upscaling style
+# as done in the ESPCN Magic ony paper for super-resolution. Currently working on implementing another version of this.
+# r is the upscale factor.
+# c is the number of output channels.
+class SubpixelLayer(lasagne.layers.Layer):
+    def __init__(self, incoming,r,c, **kwargs):
+        super(SubpixelLayer, self).__init__(incoming, **kwargs)
+        self.r=r # Upscale factor
+        self.c=c # number of output channels
+        
+    def get_output_shape_for(self, input_shape):
+        return (input_shape[0],self.c,self.r*input_shape[2],self.r*input_shape[3])
+
+    def get_output_for(self, input, deterministic=False, **kwargs):
+        out = T.zeros((input.shape[0],self.output_shape[1],self.output_shape[2],self.output_shape[3]))
+        for x in xrange(self.r): # loop across all feature maps belonging to this channel
+            for y in xrange(self.r):
+                out=T.inc_subtensor(out[:,:,x::self.r,y::self.r],input[:,self.r*x+y::self.r*self.r,:,:])
+        return out
+
 # Multiscale Dilated Convolution Block
 # This function (not a layer in and of itself, though you could make it one) returns a set of concatenated conv2d and dilatedconv2d layers.
 # Each layer uses the same basic filter W, operating at a different dilation factor (or taken as the mean of W for the 1x1 conv).
