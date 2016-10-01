@@ -46,7 +46,7 @@ import numpy as np
 import scipy.misc
 
 
-from models import IAN
+from API import IAN
 ### Step 1: Create theano functions
 
 # Initialize model

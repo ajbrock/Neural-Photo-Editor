@@ -21,7 +21,7 @@ class IAN:
         self.model = config_module.get_model(dnn=dnn)
         
         # Load weights
-        print('Theano functions compiled, loading weights')                                                                                     
+        print('Loading weights')                                                                                     
         params = list(set(lasagne.layers.get_all_params(self.model['l_out'],trainable=True)+\
                  lasagne.layers.get_all_params(self.model['l_discrim'],trainable=True)+\
                  [x for x in lasagne.layers.get_all_params(self.model['l_out'])+\
@@ -32,9 +32,10 @@ class IAN:
         # Shuffle weights if using IAF with MADE
         if 'l_IAF_mu' in self.model:
             print ('Shuffling MADE masks')
-            model['l_IAF_mu'].reset("Once")
-            model['l_IAF_ls'].reset("Once")
+            self.model['l_IAF_mu'].reset("Once")
+            self.model['l_IAF_ls'].reset("Once")
         
+        print('Compiling Theano Functions')
         # Input Tensor
         self.X = T.TensorType('float32', [False]*4)('X')
         
