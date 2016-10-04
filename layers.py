@@ -33,8 +33,8 @@ from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 from mask_generator import MaskGenerator
 
 # Subpixel Upsample Layer from (https://arxiv.org/abs/1609.05158)
-# This layer uses a set of r^2 inc_subtensor calls to reorganize the tensor in a subpixel-layer upscaling style
-# as done in the ESPCN Magic ony paper for super-resolution. Currently working on implementing another version of this.
+# This layer uses a set of r^2 set_subtensor calls to reorganize the tensor in a subpixel-layer upscaling style
+# as done in the ESPCN Magic ony paper for super-resolution.
 # r is the upscale factor.
 # c is the number of output channels.
 class SubpixelLayer(lasagne.layers.Layer):
@@ -50,8 +50,34 @@ class SubpixelLayer(lasagne.layers.Layer):
         out = T.zeros((input.shape[0],self.output_shape[1],self.output_shape[2],self.output_shape[3]))
         for x in xrange(self.r): # loop across all feature maps belonging to this channel
             for y in xrange(self.r):
-                out=T.inc_subtensor(out[:,:,x::self.r,y::self.r],input[:,self.r*x+y::self.r*self.r,:,:])
+                out=T.set_subtensor(out[:,:,x::self.r,y::self.r],input[:,self.r*x+y::self.r*self.r,:,:])
         return out
+# Subpixel Upsample Layer using reshapes as in https://github.com/Tetrachrome/subpixel. This implementation appears to be 10x slower than
+# the set_subtensor implementation, presumably because of the extra reshapes after the splits.         
+class SubpixelLayer2(lasagne.layers.Layer):
+    def __init__(self, incoming,r,c, **kwargs):
+        super(SubpixelLayer2, self).__init__(incoming, **kwargs)
+        self.r=r
+        self.c=c
+
+    
+    def get_output_shape_for(self, input_shape):
+        return (input_shape[0],self.c,self.r*input_shape[2],self.r*input_shape[3])
+
+    def get_output_for(self, input, deterministic=False, **kwargs):
+        def _phase_shift(input,r):
+            bsize,c,a,b = input.shape[0],1,self.output_shape[2]//r,self.output_shape[3]//r
+            X = T.reshape(input, (bsize,r,r,a,b))
+            X = T.transpose(X, (0, 3,4,1,2))  # bsize, a, b, r2,r1
+            X = T.split(x=X,splits_size=[1]*a,n_splits=a,axis=1)  # a, [bsize, b, r, r]
+            X = [T.reshape(x,(bsize,b,r,r))for x in X]
+            X = T.concatenate(X,axis=2)  # bsize, b, a*r, r 
+            X = T.split(x=X,splits_size =[1]*b,n_splits=b,axis=1)  # b, [bsize, a*r, r]
+            X = [T.reshape(x,(bsize,a*r,r))for x in X]
+            X = T.concatenate(X,axis=2) # bsize, a*r, b*r 
+            return X.dimshuffle(0,'x',1,2)
+        Xc = T.split(x=input,splits_size =[input.shape[1]//self.c]*self.c,n_splits=self.c,axis=1)
+        return T.concatenate([_phase_shift(xc,self.r) for xc in Xc],axis=1)        
 
 # Multiscale Dilated Convolution Block
 # This function (not a layer in and of itself, though you could make it one) returns a set of concatenated conv2d and dilatedconv2d layers.
