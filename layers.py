@@ -32,6 +32,123 @@ from math import sqrt
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 from mask_generator import MaskGenerator
 
+# BatchReNorm Layer using cuDNN's BatchNorm
+# This layer implements BatchReNorm (https://arxiv.org/abs/1702.03275), 
+# which modifies BatchNorm to include running-average statistics in addition to 
+# per-batch statistics in a well-principled manner. The RMAX and DMAX parameters 
+# are clip parameters which should be fscalars that you'll need to manage in the training
+# loop, as they follow an annealing schedule (an example of which is given in the paper).
+# I've been adjusting this schedule based on the total number of iterations relative
+# to the number given in the paper, so for a ~50,000 iteration training run, I anneal
+# RMAX between 1k and 5k iterations rather than 5k and 25k. 
+
+# NOTE: Ideally you should not have to manage RMAX and DMAX separately, so
+# if someone wants to write a default_update similar to the one used for
+# running_average and running_inv_std, that would be excellent.
+class BatchReNormDNNLayer(BatchNormLayer):
+    
+    def __init__(self, incoming, RMAX,DMAX,axes='auto', epsilon=1e-4, alpha=0.1,
+                 beta=lasagne.init.Constant(0), gamma=lasagne.init.Constant(1),
+                 mean=lasagne.init.Constant(0), inv_std=lasagne.init.Constant(1), **kwargs):
+        super(BatchReNormDNNLayer, self).__init__(
+                incoming, axes, epsilon, alpha, beta, gamma, mean, inv_std,
+                **kwargs)
+        all_but_second_axis = (0,) + tuple(range(2, len(self.input_shape)))
+        
+        self.RMAX,self.DMAX = RMAX,DMAX
+        
+        if self.axes not in ((0,), all_but_second_axis):
+            raise ValueError("BatchNormDNNLayer only supports normalization "
+                             "across the first axis, or across all but the "
+                             "second axis, got axes=%r" % (axes,))
+
+    def get_output_for(self, input, deterministic=False,
+                       batch_norm_use_averages=None,
+                       batch_norm_update_averages=None, **kwargs):
+           
+        # Decide whether to use the stored averages or mini-batch statistics
+        if batch_norm_use_averages is None:
+            batch_norm_use_averages = deterministic
+        use_averages = batch_norm_use_averages
+
+        # Decide whether to update the stored averages
+        if batch_norm_update_averages is None:
+            batch_norm_update_averages = not deterministic
+        update_averages = batch_norm_update_averages
+
+        # prepare dimshuffle pattern inserting broadcastable axes as needed
+        param_axes = iter(range(input.ndim - len(self.axes)))
+        pattern = ['x' if input_axis in self.axes
+                   else next(param_axes)
+                   for input_axis in range(input.ndim)]
+        # and prepare the converse pattern removing those broadcastable axes
+        unpattern = [d for d in range(input.ndim) if d not in self.axes]
+
+        # call cuDNN if needed, obtaining normalized outputs and statistics
+        if not use_averages or update_averages:
+            # cuDNN requires beta/gamma tensors; create them if needed
+            shape = tuple(s for (d, s) in enumerate(input.shape)
+                          if d not in self.axes)
+            gamma = self.gamma or theano.tensor.ones(shape)
+            beta = self.beta or theano.tensor.zeros(shape)
+            mode = 'per-activation' if self.axes == (0,) else 'spatial'
+            
+            (normalized,
+             input_mean,
+             input_inv_std) = theano.sandbox.cuda.dnn.dnn_batch_normalization_train(
+                    input, gamma.dimshuffle(pattern), beta.dimshuffle(pattern),
+                    mode, self.epsilon)
+
+        # normalize with stored averages, if needed
+        if use_averages:
+            mean = self.mean.dimshuffle(pattern)
+            inv_std = self.inv_std.dimshuffle(pattern)
+            gamma = 1 if self.gamma is None else self.gamma.dimshuffle(pattern)
+            beta = 0 if self.beta is None else self.beta.dimshuffle(pattern)
+            normalized = (input - mean) * (gamma * inv_std) + beta
+
+        # update stored averages, if needed
+        if update_averages:
+            # Trick: To update the stored statistics, we create memory-aliased
+            # clones of the stored statistics:
+            running_mean = theano.clone(self.mean, share_inputs=False)
+            running_inv_std = theano.clone(self.inv_std, share_inputs=False)
+            # set a default update for them:
+            running_mean.default_update = ((1 - self.alpha) * running_mean +
+                                           self.alpha * input_mean.dimshuffle(unpattern))
+            running_inv_std.default_update = ((1 - self.alpha) *
+                                              running_inv_std +
+                                              self.alpha * input_inv_std.dimshuffle(unpattern))
+            # and make sure they end up in the graph without participating in
+            # the computation (this way their default_update will be collected
+            # and applied, but the computation will be optimized away):
+            # dummy = running_mean + running_inv_std).dimshuffle(pattern)
+            r = T.clip(running_inv_std.dimshuffle(pattern)/input_inv_std,1/self.RMAX,self.RMAX)
+            d = T.clip( (input_mean-running_mean.dimshuffle(pattern))*running_inv_std.dimshuffle(pattern),-self.DMAX,self.DMAX)
+            normalized = normalized * r + d
+
+        return normalized
+
+
+
+# More Efficient MDCL layer
+# When seeking to construct an MDC block, drop this into a Conv2D layer instead; it's faster.
+# You can also easily re-parameterize this to a full-rank MDC block by dropping in the
+# line that creates baseW into the for loop such that a new W is sampled each time.
+def mdclW(num_filters,num_channels,filter_size,winit,name,scales):
+    # Coefficient Initializer
+    sinit = lasagne.init.Constant(1.0/(1+len(scales)))
+    # Total filter size
+    size = filter_size + (filter_size-1)*(scales[-1]-1)
+    # Multiscale Dilated Filter 
+    W = T.zeros((num_filters,num_channels,size,size))
+    # Undilated Base Filter
+    baseW = theano.shared(lasagne.utils.floatX(winit.sample((num_filters,num_channels,filter_size,filter_size))),name=name+'.W')
+    for scale in enumerate(scales[::-1]): # enumerate backwards so that we place the main filter on top
+            W = T.set_subtensor(W[:,:,scales[-1]-scale:size-scales[-1]+scale:scale,scales[-1]-scale:size-scales[-1]+scale:scale],
+                                  baseW*theano.shared(lasagne.utils.floatX(sinit.sample(num_filters)), name+'.coeff_'+str(scale)).dimshuffle(0,'x','x','x'))
+    return W
+
 # Subpixel Upsample Layer from (https://arxiv.org/abs/1609.05158)
 # This layer uses a set of r^2 set_subtensor calls to reorganize the tensor in a subpixel-layer upscaling style
 # as done in the ESPCN Magic ony paper for super-resolution.
