@@ -1,40 +1,5 @@
 ### Neural Photo Editor
 # A Brock, 2016
-## Gui tests
-# Note: THe width of the edge of the window in X is 8, the height of the top of the window in y is 30.
-
-
-# TO DO: Go through and fix all the shit we've broken, lol
-
-
-# TO DO: Try and remember the change we wanted to make for imgradRGB that involved not passing a fat array and indexing it? 
-#        Maybe it was keep the rest of the image constant but only modify that part? That would be a simple change.
-
-# TO DO: Clean up, reorganize, consider aliases (espcially the tkinter * import)
-
-
-
-
-
-# TODO: Clean up all variable names, especially between function library and theano vars
-
-# Idea: Localize changes? Apply a prior saying the changes are 100% near the cursor and fading to 0% far away. Combine that with mask
-
-
-# Keep ERROR as a float32 
-
-
-# ^ Part of why we need this is clear with 550: if we have a reconstruction that misses a feature (turns open mouth to closed) then changing towards
-# closed won't change the mask since the recon is already there. This will hopefully help account for mistakes
-
-# Consider making MASK mean of abs instead of abs of mean?
-
-# Consider making the imgradRGB use L1 loss instead of L2 loss?
-
-
-
-# Final to-do: make everything nice and wrap that shit into functions
-# Final to-do: May need to move widget creation up or down somehow
 
 ### Imports
 
