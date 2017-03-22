@@ -45,7 +45,7 @@ from mask_generator import MaskGenerator
 # NOTE: Ideally you should not have to manage RMAX and DMAX separately, so
 # if someone wants to write a default_update similar to the one used for
 # running_average and running_inv_std, that would be excellent.
-class BatchReNormDNNLayer(BatchNormLayer):
+class BatchReNormDNNLayer(lasagne.layers.BatchNormLayer):
     
     def __init__(self, incoming, RMAX,DMAX,axes='auto', epsilon=1e-4, alpha=0.1,
                  beta=lasagne.init.Constant(0), gamma=lasagne.init.Constant(1),
